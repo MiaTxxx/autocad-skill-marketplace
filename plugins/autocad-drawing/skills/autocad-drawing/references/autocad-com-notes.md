@@ -13,6 +13,10 @@ app = gencache.EnsureDispatch(wc.Dispatch("AutoCAD.Application"))         # 没�
 ```
 
 - CAD 未运行时 `GetActiveObject` 抛 `pywintypes.com_error (-2147221021, '操作无法使用')`。这是"没有进程可附着"，不是代码错误；此时改用 `Dispatch` 会新拉起一个 CAD 进程。
+- **CAD 正忙时会拒绝调用**：`com_error (-2147418111, '被呼叫方拒绝接收呼叫。')`。这不是"没连上"——进程在、窗口 `Responding=True`、也没有模态对话框，而是 **CAD 里有交互命令正在执行或等待输入**（夹点编辑、选择窗口、命令行等待点/数值）。判别与处置：
+  - 脚本侧：`attach()` 做有界重试并把这个 hr 单独识别（`ERR_BUSY`），失败时给出"请在 CAD 中按 Esc 结束当前命令"的提示，而不是抛裸错误码；
+  - 人工侧：枚举 CAD 顶层窗口确认无模态框，再截图看命令行/夹点状态；
+  - **不要强杀 CAD 进程**，会丢用户未保存的编辑。
 - 一律用 `gencache.EnsureDispatch`。晚绑定（`wc.Dispatch` 不经 gencache）下 `ModelSpace` 的遍历与属性读取行为不一致，曾直接导致取不到属性。
 - `app.Visible = True` 让新实例可见；`app.Quit()` 可关闭。
 - 中文文件名与中文路径可用（`SaveAs(r"…\example.dwg")` 实测成功）。Python 以 `-X utf8` 运行可避免控制台打印中文报编码错。

@@ -296,22 +296,68 @@ def _cast(obj, interface):
         return obj
 
 
-def attach(launch=False):
+ERR_NOT_RUNNING = -2147221021   # 操作无法使用: 没有可附着的 CAD 进程
+ERR_BUSY = -2147418111          # 被呼叫方拒绝接收呼叫: CAD 正忙(交互命令等待输入等)
+
+
+def _hr(e):
+    hr = getattr(e, "hresult", None)
+    if hr is not None:
+        return hr
+    args = getattr(e, "args", None)
+    return args[0] if args and isinstance(args[0], int) else None
+
+
+def is_busy(e):
+    """CAD 拒绝调用(而不是没在运行) —— 典型原因: 有交互命令正在等待输入。"""
+    return _hr(e) == ERR_BUSY
+
+
+def attach(launch=False, attempts=3, delay=1.5):
+    """附着到运行中的 AutoCAD。CAD 正忙于交互命令时会被拒绝, 故做有界重试;
+    重试仍失败则给出可诊断的原因, 而不是抛裸的 com_error。"""
+    import time
     import win32com.client as wc
-    try:
-        app = wc.GetActiveObject("AutoCAD.Application")
-    except Exception as e:
-        if not launch:
-            raise SpecError(
-                "连不上正在运行的 AutoCAD(%s)。先启动 CAD, 或加 --launch 由脚本拉起。"
-                "注意: AutoCAD LT 没有 ActiveX/COM 接口。" % e)
-        app = wc.Dispatch("AutoCAD.Application")
-    try:                                   # 统一走类型库, 避免 gen_py 缓存有无导致行为不一致
-        from win32com.client import gencache
-        app = gencache.EnsureDispatch(app)
-    except Exception:
-        pass
-    return app
+    last = None
+    for attempt in range(1, attempts + 1):
+        try:
+            app = wc.GetActiveObject("AutoCAD.Application")
+            try:                           # 统一走类型库, 避免 gen_py 缓存有无导致行为不一致
+                from win32com.client import gencache
+                app = gencache.EnsureDispatch(app)
+            except Exception:
+                pass
+            app.ActiveDocument.ModelSpace.Count      # 真正握手一次, 暴露"忙"的拒绝
+            return app
+        except Exception as e:
+            last = e
+            if is_busy(e) and attempt < attempts:
+                time.sleep(delay)
+                continue
+            break
+
+    if is_busy(last):
+        raise SpecError(
+            "AutoCAD 正忙, 拒绝 ActiveX 调用 (%s)。通常是 CAD 里有命令正在执行或等待输入"
+            "(夹点编辑、选择窗口、尺寸输入等)。请在 CAD 中按 Esc 结束当前命令后重试; "
+            "不要强杀进程, 以免丢失未保存的编辑。" % last)
+    if _hr(last) == ERR_NOT_RUNNING and launch:
+        try:
+            app = wc.Dispatch("AutoCAD.Application")
+            try:
+                from win32com.client import gencache
+                app = gencache.EnsureDispatch(app)
+            except Exception:
+                pass
+            app.ActiveDocument.ModelSpace.Count      # 同样握手一次
+            return app
+        except Exception as e:
+            raise SpecError("拉起 AutoCAD 失败: %s" % e)
+    if _hr(last) == ERR_NOT_RUNNING:
+        raise SpecError(
+            "连不上正在运行的 AutoCAD(%s)。先启动 CAD, 或加 --launch 由脚本拉起。"
+            "注意: AutoCAD LT 没有 ActiveX/COM 接口。" % last)
+    raise SpecError("附着 AutoCAD 失败: %s" % last)
 
 
 def ensure_layers(doc, layers):
