@@ -17,6 +17,8 @@
         "./skills/autocad-drawing"
       ],
       "category": "development",
+      "license": "MIT",
+      "repository": "https://github.com/MiaTxxx/autocad-skill-marketplace",
       "keywords": ["autocad", "cad", "com", "activex", "drawing", "dwg"]
     }
   ]

@@ -109,3 +109,7 @@ git add -A && git commit -m "update skill" && git push
 ## 边界
 
 不覆盖：三维实体、块/属性块、标注对象与参数化约束、布局视口。`SendCommand` 是异步且失败无声，仅用于 COM 没有等价物的命令（`-HATCH`、`BOUNDARY`、`PEDIT`、`PLOT`），且仍需回读验证。
+
+## 许可
+
+[MIT](LICENSE) © 2026 MiaTxxx。可自由使用、修改、再分发（保留版权声明即可）。
