@@ -75,7 +75,18 @@ sync.ps1                              从全局安装目录刷新本仓库副本
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File sync.ps1
+git add -A && git commit -m "update skill" && git push
 ```
+
+**升级后没生效的坑**：`omp plugin install` 会复用已有缓存，不会自动拉新版本（实测：改完推送后重装，装出来的仍是旧脚本，sha256 对不上）。要清缓存重装：
+
+```
+omp plugin marketplace update <marketplace>          # 刷新目录
+omp plugin install --force autocad-drawing@autocad-skill-marketplace
+```
+
+核对是否真的更新了，直接比哈希最可靠：
+`sha256sum ~/.omp/agent/skills/AutoCAD/scripts/cad_ai.py` 与安装缓存里的同名文件。
 
 ## 发布状态
 
