@@ -22,7 +22,7 @@ omp plugin install autocad-drawing@autocad-skill-marketplace
 
 ### 方式二：直接拷成用户级 skill
 
-把 `plugins/autocad-drawing/skills/autocad-drawing/` 整个复制到 `%USERPROFILE%\.omp\agent\skills\AutoCAD\`，任何项目即刻可用（skill 发现规则：`<skills-root>/<name>/SKILL.md`，逐级不递归）。
+把 `skills/autocad-drawing/` 整个目录复制到 `%USERPROFILE%\.omp\agent\skills\AutoCAD\`，任何项目即刻可用（skill 发现规则：`<skills-root>/<name>/SKILL.md`，逐级不递归）。
 
 装好后新开一个会话，`skill://autocad-drawing` 与 `/skill:autocad-drawing` 即可用。
 
@@ -57,21 +57,21 @@ python scripts/cad_ai.py --spec spec.json --verify-only        # 只回读校验
 
 ## 仓库结构
 
+与主流技能仓库（如 `anthropics/skills`）保持一致：skill 直接放在根目录的 `skills/<name>/` 下，一眼可见。
+
 ```
-.omp-plugin/marketplace.json          omp 目录
-.claude-plugin/marketplace.json       Claude Code 兼容目录（同一份内容）
-plugins/autocad-drawing/
-  skills/autocad-drawing/
-    SKILL.md                          作业规范：硬规则/流程/验收判据/坑
-    scripts/cad_ai.py                 校验 → 编译 → 落图 → 回读
-    scripts/nl2spec.py                自然语言 → 规格 JSON
-    references/autocad-com-notes.md   COM 实测笔记：绑定、属性、错误码、锚点
+.claude-plugin/marketplace.json       目录：插件 source 为 "./"，并用 skills 字段声明根目录下的 skill
+skills/autocad-drawing/
+  SKILL.md                            作业规范：硬规则/流程/验收判据/坑
+  scripts/cad_ai.py                   校验 → 编译 → 落图 → 回读
+  scripts/nl2spec.py                  自然语言 → 规格 JSON
+  references/autocad-com-notes.md     COM 实测笔记：绑定、属性、错误码、锚点
 sync.ps1                              从全局安装目录刷新本仓库副本
 ```
 
 ## 维护：改完怎么同步
 
-`plugins/autocad-drawing/skills/autocad-drawing/` 是**产物副本**，真正的编辑对象是全局安装目录。改完跑一次：
+`skills/autocad-drawing/` 是**产物副本**，真正的编辑对象是全局安装目录。改完跑一次：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File sync.ps1
