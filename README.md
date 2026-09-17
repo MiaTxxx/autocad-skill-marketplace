@@ -67,6 +67,8 @@ skills/autocad-drawing/
   scripts/nl2spec.py                  自然语言 → 规格 JSON
   references/autocad-com-notes.md     COM 实测笔记：绑定、属性、错误码、锚点
 sync.ps1                              从全局安装目录刷新本仓库副本
+CHANGELOG.md                          变更记录
+LICENSE                               MIT
 ```
 
 ## 维护：改完怎么同步
