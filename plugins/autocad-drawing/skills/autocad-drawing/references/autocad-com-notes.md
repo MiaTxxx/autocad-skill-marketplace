@@ -17,6 +17,8 @@ app = gencache.EnsureDispatch(wc.Dispatch("AutoCAD.Application"))         # 没�
   - 脚本侧：`attach()` 做有界重试并把这个 hr 单独识别（`ERR_BUSY`），失败时给出"请在 CAD 中按 Esc 结束当前命令"的提示，而不是抛裸错误码；
   - 人工侧：枚举 CAD 顶层窗口确认无模态框，再截图看命令行/夹点状态；
   - **不要强杀 CAD 进程**，会丢用户未保存的编辑。
+- CAD 停在**开始页**（没有任何打开的图纸）时，`app.ActiveDocument` 抛 `com_error (-2145320900, '无法获取 Document 对象')`。这不是"连不上"：`app.Documents.Count == 0` 即可判定。**握手探针不要用 `ActiveDocument`**，用 `Documents.Count`；需要图纸时按"已有则用 → 目标 dwg 存在则打开 → 否则新建"处理。
+- **关闭 / 新建 / 打开文档之后有一段瞬时忙窗口**（实测 1–2 秒内连续被拒 `RPC_E_CALL_REJECTED`），任何后续 COM 调用都可能中招——不只是 `attach`。因此每个 COM 边界都要有界重试（`retry_com()`）：附着、取文档、落图、读模型空间、设视图、保存。落图若中途被拒，丢弃本轮半成品后整轮重画，避免重复实体。
 - 一律用 `gencache.EnsureDispatch`。晚绑定（`wc.Dispatch` 不经 gencache）下 `ModelSpace` 的遍历与属性读取行为不一致，曾直接导致取不到属性。
 - `app.Visible = True` 让新实例可见；`app.Quit()` 可关闭。
 - 中文文件名与中文路径可用（`SaveAs(r"…\example.dwg")` 实测成功）。Python 以 `-X utf8` 运行可避免控制台打印中文报编码错。

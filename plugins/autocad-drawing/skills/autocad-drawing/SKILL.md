@@ -62,6 +62,7 @@ description: '用 COM/ActiveX 驱动本机正在运行的完整版 AutoCAD，按
    输出语义提示、图元清单、两条算路自检。规格报错在此处修完。
 3. 落图：`python scripts/cad_ai.py --spec spec.json --clear`
    可选 `--force`（覆盖同名 dwg）、`--launch`（CAD 未运行时由脚本拉起）、`--dwg <路径>`。
+   CAD 若停在「开始」页（没打开任何图纸），会先按"目标 dwg 存在则打开、否则新建一张"自动准备好图纸。
 4. 复核：`--verify-only` 只回读不落图（可对任何已画好的图用）。
 5. 视觉确认（可选）：窗口截图或 computer-use 看图形是否完整、居中、无多余标注。
 6. 交付：dwg 路径 + 回读结果 + 关键实测值。
@@ -104,6 +105,8 @@ description: '用 COM/ActiveX 驱动本机正在运行的完整版 AutoCAD，按
 - `AddLightWeightPolyline` 必须传 `VARIANT(VT_ARRAY|VT_R8)` 扁平数组；圆弧段用 `SetBulge(i, tan(θ/4))`（90° 弧 = `tan22.5°`）。
 - `ZoomExtents()` / `ActiveViewport` / `SetVariable("VIEWSIZE")` 在 2026 上都不刷新画面（实测报"设置系统变量时出错"或写了不重绘），只能用 `SendCommand`；**但绝不用 `_W`/`_E` 这类缩写**——实测 `_.ZOOM` 后跟 `_W` 若没被 ZOOM 接住，`W` 会被当成命令别名（= WBLOCK 写块）弹出模态框、脚本挂死、CAD 主窗口被禁用。规则：只用完整关键字（`Extents`），且发送前 `if doc.GetVariable("CMDACTIVE") != 0: 放弃`。
 - 校验按**几何配对**，不是按索引配对——索引错位会产生假通过。
+- CAD 停在「开始」页（无任何图纸）时 `ActiveDocument` 抛 `com_error (-2145320900)`：握手要用 `Documents.Count`，需要图纸时"已有则用 → 目标存在则打开 → 否则新建"（`ensure_document()`）。
+- **关闭/新建/打开图纸后有 1–2 秒瞬时忙窗口**，任何 COM 调用都可能被拒——不只是附着。所有 COM 边界（附着/取文档/落图/读图/设视图/保存）都走 `retry_com()` 有界重试；落图中途被拒则丢弃半成品整轮重画。
 
 ## 8. 能力边界
 

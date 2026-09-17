@@ -298,6 +298,7 @@ def _cast(obj, interface):
 
 ERR_NOT_RUNNING = -2147221021   # 操作无法使用: 没有可附着的 CAD 进程
 ERR_BUSY = -2147418111          # 被呼叫方拒绝接收呼叫: CAD 正忙(交互命令等待输入等)
+ERR_NO_DOC = -2145320900        # 无法获取 Document 对象: CAD 停在开始页, 没有任何打开的图纸
 
 
 def _hr(e):
@@ -311,6 +312,48 @@ def _hr(e):
 def is_busy(e):
     """CAD 拒绝调用(而不是没在运行) —— 典型原因: 有交互命令正在等待输入。"""
     return _hr(e) == ERR_BUSY
+
+
+def probe(app):
+    """对 app 做一次最小的真实 COM 调用以确认可通讯。
+
+    注意: 不能用 app.ActiveDocument —— CAD 停在"开始"页时没有任何文档,
+    取 ActiveDocument 会报 ERR_NO_DOC('无法获取 Document 对象'), 那仍然说明连接是通的。
+    """
+    try:
+        return app.Documents.Count
+    except Exception as e:
+        if _hr(e) == ERR_NO_DOC:
+            return 0
+        raise
+
+
+def ensure_document(app, target=None):
+    """拿到可用的图纸: 已有打开的就用; 一张都没有时, 目标 dwg 存在就打开它, 否则新建一张。"""
+    n = retry_com(lambda: app.Documents.Count, what="查询已打开文档")
+    if n:
+        return retry_com(lambda: app.ActiveDocument, what="取当前图纸")
+    if target and os.path.exists(target):
+        return retry_com(lambda: app.Documents.Open(os.path.abspath(target)), what="打开图纸")
+    return retry_com(lambda: app.Documents.Add(), what="新建图纸")
+
+
+def retry_com(fn, attempts=5, delay=0.6, what="COM 调用"):
+    """有界重试: AutoCAD 在关闭/新建文档后、或有命令在跑时会瞬时拒绝调用
+    (RPC_E_CALL_REJECTED); 起始页无文档时取 ActiveDocument 报 ERR_NO_DOC, 也在这里重试。
+    只重试这两类"环境性"错误, 其它异常原样抛出。"""
+    import time
+    last = None
+    for k in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            if _hr(e) in (ERR_BUSY, ERR_NO_DOC) and k < attempts - 1:
+                time.sleep(delay)
+                continue
+            raise
+    raise SpecError("%s 连续 %d 次被 AutoCAD 拒绝(正忙): %s" % (what, attempts, last))
 
 
 def attach(launch=False, attempts=3, delay=1.5):
@@ -327,7 +370,7 @@ def attach(launch=False, attempts=3, delay=1.5):
                 app = gencache.EnsureDispatch(app)
             except Exception:
                 pass
-            app.ActiveDocument.ModelSpace.Count      # 真正握手一次, 暴露"忙"的拒绝
+            probe(app)                               # 真正握手一次, 暴露"忙"的拒绝
             return app
         except Exception as e:
             last = e
@@ -349,7 +392,7 @@ def attach(launch=False, attempts=3, delay=1.5):
                 app = gencache.EnsureDispatch(app)
             except Exception:
                 pass
-            app.ActiveDocument.ModelSpace.Count      # 同样握手一次
+            probe(app)                               # 同样握手一次
             return app
         except Exception as e:
             raise SpecError("拉起 AutoCAD 失败: %s" % e)
@@ -378,37 +421,58 @@ def ensure_layers(doc, layers):
                 pass
 
 
-def draw(app, ents, layers=None, clear=False):
+def _clear_modelspace(ms):
+    for i in range(ms.Count - 1, -1, -1):
+        ms.Item(i).Delete()
+
+
+def _add_entity(ms, e):
+    if e["op"] == "lwpolyline":
+        obj = ms.AddLightWeightPolyline(_variant([c for p in e["pts"] for c in p[:2]]))
+        for i, p in enumerate(e["pts"]):
+            if p[2]:
+                obj.SetBulge(i, p[2])
+        obj.Closed = bool(e["closed"])
+    elif e["op"] == "circle":
+        obj = ms.AddCircle(_variant(e["center"] + [0.0]), e["radius"])
+    elif e["op"] == "line":
+        obj = ms.AddLine(_variant(e["a"] + [0.0]), _variant(e["b"] + [0.0]))
+    else:
+        raise SpecError("未知图元类型 %r" % e["op"])
+    obj.Layer = e["layer"]
+    obj.Update()
+    return obj
+
+
+def draw(app, ents, layers=None, clear=False, target=None):
+    import time
     layers = DEFAULT_LAYERS if layers is None else layers
-    doc = app.ActiveDocument
+    doc = ensure_document(app, target)
     ms = doc.ModelSpace
     if ms.Count and not clear:
         raise SpecError("模型空间已有 %d 个图元; 要清空重画请显式加 --clear" % ms.Count)
-    if clear:
-        for i in range(ms.Count - 1, -1, -1):
-            ms.Item(i).Delete()
-    ensure_layers(doc, layers)
+    retry_com(lambda: _clear_modelspace(ms), what="清空模型空间")
+    retry_com(lambda: ensure_layers(doc, layers), what="建立图层")
     try:
-        doc.SetVariable("UCSICON", 0)
+        retry_com(lambda: doc.SetVariable("UCSICON", 0), what="关闭 UCS 图标")
     except Exception:
         pass
 
-    for e in ents:
-        if e["op"] == "lwpolyline":
-            obj = ms.AddLightWeightPolyline(_variant([c for p in e["pts"] for c in p[:2]]))
-            for i, p in enumerate(e["pts"]):
-                if p[2]:
-                    obj.SetBulge(i, p[2])
-            obj.Closed = bool(e["closed"])
-        elif e["op"] == "circle":
-            obj = ms.AddCircle(_variant(e["center"] + [0.0]), e["radius"])
-        elif e["op"] == "line":
-            obj = ms.AddLine(_variant(e["a"] + [0.0]), _variant(e["b"] + [0.0]))
-        else:
-            raise SpecError("未知图元类型 %r" % e["op"])
-        obj.Layer = e["layer"]
-        obj.Update()
-    return doc
+    # 落图过程中若被瞬时拒绝, 丢掉本轮半成品后整轮重画, 避免重复实体
+    last = None
+    for attempt in range(3):
+        try:
+            for e in ents:
+                _add_entity(ms, e)
+            return doc
+        except Exception as e:
+            last = e
+            if _hr(e) in (ERR_BUSY, ERR_NO_DOC) and attempt < 2:
+                time.sleep(0.6)
+                retry_com(lambda: _clear_modelspace(ms), what="清空半成品")
+                continue
+            raise
+    raise SpecError("落图连续 3 次被 AutoCAD 拒绝(正忙): %s" % last)
 
 
 def fit_view(doc):
@@ -420,10 +484,10 @@ def fit_view(doc):
     因此这里只用完整关键字 Extents(不是任何别名), 且发送前用 CMDACTIVE 确认没有命令正在执行。
     """
     try:
-        if int(doc.GetVariable("CMDACTIVE")) != 0:
+        if int(retry_com(lambda: doc.GetVariable("CMDACTIVE"), what="读 CMDACTIVE")) != 0:
             return False                       # 有命令在进行, 绝不往命令行塞东西
-        doc.SendCommand("_.ZOOM\nExtents\n")
-        doc.Regen(1)
+        retry_com(lambda: doc.SendCommand("_.ZOOM\nExtents\n"), what="发送 ZOOM")
+        retry_com(lambda: doc.Regen(1), what="重生成")
         return True
     except Exception:
         return False
@@ -582,29 +646,40 @@ def main(argv=None):
         print("[FAIL] %s" % e)
         return 3
 
-    if not args.verify_only:
+    target = args.dwg or spec.get("output", {}).get("dwg")
+    if target:
+        target = os.path.abspath(target)
+
+    if args.verify_only:
+        if app.Documents.Count == 0:
+            if target and os.path.exists(target):
+                app.Documents.Open(target)
+                print("== 未打开任何图纸, 已从磁盘打开 ==\n  %s" % target)
+            else:
+                print("[FAIL] AutoCAD 没有打开任何图纸(停在开始页), 且没有可打开的 "
+                      "--dwg / spec.output.dwg")
+                return 3
+    else:
         try:
-            doc = draw(app, ents, clear=args.clear)
+            doc = draw(app, ents, clear=args.clear, target=target)
         except SpecError as e:
             print("[FAIL] %s" % e)
             return 3
         fit_view(doc)
-        target = args.dwg or spec.get("output", {}).get("dwg")
         if target:
-            target = os.path.abspath(target)
             cur = getattr(doc, "FullName", "") or ""
             if os.path.exists(target) and os.path.abspath(cur).lower() != target.lower() \
                     and not args.force:
                 print("[FAIL] %s 已存在; 要覆盖请加 --force" % target)
                 return 3
             if os.path.abspath(cur).lower() == target.lower():
-                doc.Save()
+                retry_com(lambda: doc.Save(), what="保存")
             else:
-                doc.SaveAs(target)
+                retry_com(lambda: doc.SaveAs(target), what="另存")
             print("== 已保存 ==\n  %s" % target)
 
     doc = app.ActiveDocument
-    snap = snapshot(doc.ModelSpace)
+    snap = retry_com(lambda: snapshot(doc.ModelSpace), what="读取模型空间")
     ok, rows = verify(snap, ents)
     print("== 回读校验(期望 vs CAD 实际) ==")
     width = max(len(r[0]) for r in rows) + 2
