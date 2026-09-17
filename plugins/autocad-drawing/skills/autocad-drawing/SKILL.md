@@ -102,12 +102,12 @@ description: '用 COM/ActiveX 驱动本机正在运行的完整版 AutoCAD，按
 - `ms.Item(i)` 静态返回 `IAcadEntity` 基类，取 `Length/Radius/Center` 要 `CastTo("IAcadLWPolyline"/"IAcadCircle"/"IAcadLine")`。
 - 遍历用索引循环，清空用**倒序**删除；不要 `for e in ms`。
 - `AddLightWeightPolyline` 必须传 `VARIANT(VT_ARRAY|VT_R8)` 扁平数组；圆弧段用 `SetBulge(i, tan(θ/4))`（90° 弧 = `tan22.5°`）。
-- `ZoomExtents()` / `ActiveViewport` 在 2026 上不刷新画面，改用 `SendCommand("_.ZOOM\n_W\n…")` + `Regen(1)`。
+- `ZoomExtents()` / `ActiveViewport` / `SetVariable("VIEWSIZE")` 在 2026 上都不刷新画面（实测报"设置系统变量时出错"或写了不重绘），只能用 `SendCommand`；**但绝不用 `_W`/`_E` 这类缩写**——实测 `_.ZOOM` 后跟 `_W` 若没被 ZOOM 接住，`W` 会被当成命令别名（= WBLOCK 写块）弹出模态框、脚本挂死、CAD 主窗口被禁用。规则：只用完整关键字（`Extents`），且发送前 `if doc.GetVariable("CMDACTIVE") != 0: 放弃`。
 - 校验按**几何配对**，不是按索引配对——索引错位会产生假通过。
 
 ## 8. 能力边界
 
-- `SendCommand` 是异步 fire-and-forget，失败只往命令行打文本，**不能据其判定成功**；仅用于没有 COM 等价物的操作（`-HATCH`、`-BOUNDARY`、`PEDIT`、`PLOT`），且落图后仍须回读验证。
+- `SendCommand` 是异步 fire-and-forget，失败只往命令行打文本，**不能据其判定成功**；仅用于没有 COM 等价物的操作（`-HATCH`、`-BOUNDARY`、`PEDIT`、`PLOT`），且落图后仍须回读验证；**参数只用完整关键字**（单字母缩写会撞上命令别名，见第 7 节实测事故）。
 - 不覆盖：三维实体、块参照/属性块、标注对象与尺寸驱动约束、图层过滤与布局视口设置。
 - 不做：代替用户决定缺失尺寸、在 LT 上工作、声称 DRC/工艺合格。
 - 扩展新图元需同步四处：`validate_spec` / `compile_spec` / `snapshot` / `_match`（配套 `_want_text`、`_act_text`），任一处漏改都会让校验失去意义。

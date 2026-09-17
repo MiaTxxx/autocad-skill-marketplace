@@ -411,24 +411,22 @@ def draw(app, ents, layers=None, clear=False):
     return doc
 
 
-def fit_view(doc, ents, margin=3.0):
-    xs, ys = [], []
-    for e in ents:
-        if e["op"] == "lwpolyline":
-            xs += [p[0] for p in e["pts"]]
-            ys += [p[1] for p in e["pts"]]
-        elif e["op"] == "circle":
-            xs += [e["center"][0] - e["radius"], e["center"][0] + e["radius"]]
-            ys += [e["center"][1] - e["radius"], e["center"][1] + e["radius"]]
-        else:
-            xs += [e["a"][0], e["b"][0]]
-            ys += [e["a"][1], e["b"][1]]
-    try:                                   # COM 的 ZoomExtents 在 2026 上不刷新, 用命令行 ZOOM
-        doc.SendCommand("_.ZOOM\n_W\n%.4f,%.4f\n%.4f,%.4f\n" % (
-            min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin))
+def fit_view(doc):
+    """把视图调到全图。
+
+    2026 上 app.ZoomExtents() / ActiveViewport / SetVariable("VIEWSIZE") 都不能可靠刷新画面,
+    只能走命令行; 而命令行有别名风险: 实测 `_.ZOOM` 后跟缩写 `_W` 时, 若 ZOOM 没接住这段输入,
+    `W` 会被当成命令别名(= WBLOCK 写块)并弹出模态对话框, 脚本随即挂死、CAD 主窗口被禁用。
+    因此这里只用完整关键字 Extents(不是任何别名), 且发送前用 CMDACTIVE 确认没有命令正在执行。
+    """
+    try:
+        if int(doc.GetVariable("CMDACTIVE")) != 0:
+            return False                       # 有命令在进行, 绝不往命令行塞东西
+        doc.SendCommand("_.ZOOM\nExtents\n")
         doc.Regen(1)
+        return True
     except Exception:
-        pass
+        return False
 
 
 # ============ 4. 回读校验(按图元实际类型取接口, 按几何匹配, 不看顺序) ============
@@ -590,7 +588,7 @@ def main(argv=None):
         except SpecError as e:
             print("[FAIL] %s" % e)
             return 3
-        fit_view(doc, ents)
+        fit_view(doc)
         target = args.dwg or spec.get("output", {}).get("dwg")
         if target:
             target = os.path.abspath(target)

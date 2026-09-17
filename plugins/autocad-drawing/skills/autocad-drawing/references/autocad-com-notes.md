@@ -83,12 +83,14 @@ doc.Layers.Item("中心线").Linetype = "CENTER"
 ## 7. 视图
 
 - `doc.SetVariable("UCSICON", 0)` 关闭 UCS 图标（保存进文件的视图状态）。
-- `app.ZoomExtents()` 与通过 `doc.ActiveViewport` 设置 `Center`/`Height` 在 2026 上**不刷新画面**（属性写进去也不重绘）。
-- 有效做法：
+- `app.ZoomExtents()`、通过 `doc.ActiveViewport` 设置 `Center`/`Height`、`doc.SetVariable("VIEWSIZE", …)` 在 2026 上都不能可靠改变画面（前者不重绘，后者直接报"设置系统变量时出错"）。
+- 有且只有命令行能用，但**只能用完整关键字**：
   ```python
-  doc.SendCommand("_.ZOOM\n_W\n%.4f,%.4f\n%.4f,%.4f\n" % (x1, y1, x2, y2))
-  doc.Regen(1)
+  if int(doc.GetVariable("CMDACTIVE")) == 0:        # 有命令在执行就不要塞输入
+      doc.SendCommand("_.ZOOM\nExtents\n")
+      doc.Regen(1)
   ```
+- **实测事故（务必记住）**：用缩写 `_.ZOOM\n_W\n…` 时，若 ZOOM 没接住这段输入，`W` 会在命令行被解析为命令别名 **W = WBLOCK（写块）**，弹出**模态对话框**，此后 CAD 主窗口 `enabled=False`、所有 ActiveX 调用被拒绝/挂起，脚本卡死（不是报错退出）。处置：向该对话框窗口 `PostMessage(hDlg, WM_CLOSE, 0, 0)` 等价于"取消"；**不要**轻易点"确定"（会真写块文件）。同理 `_E` = ERASE 别名。凡是往命令行送字符，都要用完整关键字（`Extents`/`Window`/`All`），不用单字母缩写。
 
 ## 8. 保存与文件
 
