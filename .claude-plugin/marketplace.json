@@ -1,0 +1,20 @@
+{
+  "name": "autocad-skill-marketplace",
+  "owner": {
+    "name": "MiaTxxx"
+  },
+  "metadata": {
+    "description": "AutoCAD 参数化绘图 skill：结构化规格 → COM 落图 → 回读校验",
+    "version": "1.0.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "autocad-drawing",
+      "description": "用 COM/ActiveX 驱动完整版 AutoCAD 按参数化规格绘图、改图、读图，落图后逐图元回读校验几何",
+      "source": "./autocad-drawing",
+      "category": "development",
+      "keywords": ["autocad", "cad", "com", "activex", "drawing", "dwg"]
+    }
+  ]
+}
