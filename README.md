@@ -77,15 +77,23 @@ sync.ps1                              从全局安装目录刷新本仓库副本
 powershell -ExecutionPolicy Bypass -File sync.ps1
 ```
 
-## 发布到 GitHub 让别人用
+## 发布状态
 
-```bash
-git init && git add -A && git commit -m "autocad-drawing skill"
-git remote add origin git@github.com:<你的账号>/autocad-skill-marketplace.git
-git push -u origin main
+已发布：**https://github.com/MiaTxxx/autocad-skill-marketplace**（public，默认分支 `main`）
+
+别人直接：
+
+```
+/marketplace add MiaTxxx/autocad-skill-marketplace
+/marketplace install autocad-drawing@autocad-skill-marketplace
 ```
 
-之后把 `owner/repo` 发给别人，对方 `/marketplace add owner/repo` 即可。
+自己更新本仓库后推送：
+
+```bash
+powershell -ExecutionPolicy Bypass -File sync.ps1   # 从全局安装目录刷新 skill 副本
+git add -A && git commit -m "update skill" && git push
+```
 
 ## 边界
 
